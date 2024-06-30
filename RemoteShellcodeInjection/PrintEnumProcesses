@@ -1,0 +1,81 @@
+#include <stdio.h>
+#include <windows.h>
+#include <psapi.h>
+
+//Prints the process name and process ids of enum process
+// running process with same priviledge
+BOOL PrintProcess() {
+
+	DWORD adwProcesses[1024 * 2],
+		dwReturnLen1 = NULL,
+		dwRetrunLen2 = NULL,
+		dwNmbrOfPids = NULL;
+
+	HANDLE hProcess = NULL;
+	HMODULE hModule = NULL;
+
+	WCHAR szProc[MAX_PATH];
+
+	// Get the array of PIDs
+	if (!EnumProcesses(adwProcesses, sizeof(adwProcesses), &dwReturnLen1)) {
+		printf("[!] EnumProcesses failed with %d \n", GetLastError());
+		return 1;
+	}
+
+	// Calculating the number of elements in the array
+	dwNmbrOfPids = dwReturnLen1 / sizeof(DWORD);
+
+	printf("[!] Number of Processes Detected  : %d \n", dwNmbrOfPids);
+
+	for (int i = 0; i < dwNmbrOfPids; i++) {
+
+		// if process is not NULL
+		if (adwProcesses[i] != NULL) {
+			
+			// OPEN a process handle
+			if (((hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, adwProcesses[i])) != NULL)) {
+
+				// IF handle is valid
+				// get a handle of a module in the process 'hprocess'
+				// the module handle is needed for 'GetModuleBaseName'
+
+				if (!EnumProcessModules(hProcess, &hModule, sizeof(HMODULE), &dwRetrunLen2)) {
+
+					printf("[!] EnumProcessModules failed with %d\n", GetLastError());
+
+				}
+				else {
+					// if EnumProcessModules succeded
+					// get the name of 'hprocess' and save it in the 'szProc' variable
+
+					if (!GetModuleBaseName(hProcess, hModule, szProc, sizeof(szProc) / sizeof(WCHAR))) {
+						printf("[!] GetModuleBaseName failed with %d\n", GetLastError());
+					}
+					else {
+						//printing the process name & its PID
+						wprintf(L"[%0.3d] Process \"%s\" -of pid : %d \n", i, szProc, adwProcesses[i]);
+					}
+				}
+
+				//close process handle
+				CloseHandle(hProcess);
+			}
+		}
+
+		// Itereate through the pids arry
+	}
+
+	return TRUE;
+}
+
+
+int main() {
+
+
+	if (!PrintProcess()) {
+		printf("[!] PrintfProcess failed with %d\n", GetLastError());
+
+	}
+	return TRUE;
+
+}
