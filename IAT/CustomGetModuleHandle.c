@@ -39,11 +39,11 @@ HMODULE GetModuleHandleReplacement(IN LPCWSTR szModuleName) {
 
     // Getting PEB
 #ifdef _WIN64 // if compiling as x64
-    PPEB					pPeb = (PEB*)(__readgsqword(0x60));
+    PPEB pPeb = (PEB*)(__readgsqword(0x60));
 #elif _WIN32 // if compiling as x32
-    PPEB					pPeb = (PEB*)(__readfsdword(0x30));
+    PPEB pPeb = (PEB*)(__readfsdword(0x30));
 #endif// Getting Ldr
-    PPEB_LDR_DATA			pLdr = (PPEB_LDR_DATA)(pPeb->Ldr);
+    PPEB_LDR_DATA	pLdr = (PPEB_LDR_DATA)(pPeb->Ldr);
     // Getting the first element in the linked list (contains information about the first module)
     PLDR_DATA_TABLE_ENTRY	pDte = (PLDR_DATA_TABLE_ENTRY)(pLdr->InMemoryOrderModuleList.Flink);
 
@@ -55,11 +55,10 @@ HMODULE GetModuleHandleReplacement(IN LPCWSTR szModuleName) {
             // Check if both equal
             if (IsStringEqual(pDte->FullDllName.Buffer, szModuleName)) {
                 wprintf(L"[+] Found Dll \"%s\" \n", pDte->FullDllName.Buffer);
-                return (HMODULE)pDte->Reserved2[0];
+                return (HMODULE)pDte->Reserved2[0]; // Reserved2[0] = dllbase, Reserved2[1] = points to the InInitializationOrderLinks field
 
             }
 
-                // wprintf(L"[i] \"%s\" \n", pDte->FullDllName.Buffer);
             }
             else {
                 break;
