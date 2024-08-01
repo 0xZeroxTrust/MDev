@@ -39,7 +39,8 @@ HMODULE GetModuleHandleReplacement(IN LPCWSTR szModuleName) {
 
     // Getting PEB
 #ifdef _WIN64 // if compiling as x64
-    PPEB pPeb = (PEB*)(__readgsqword(0x60));
+    // gs > Dedicated x64 register for accessing TEB
+    PPEB pPeb = (PEB*)(__readgsqword(0x60)); 
 #elif _WIN32 // if compiling as x32
     PPEB pPeb = (PEB*)(__readfsdword(0x30));
 #endif// Getting Ldr
