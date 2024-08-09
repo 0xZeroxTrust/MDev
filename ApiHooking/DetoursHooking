@@ -1,0 +1,123 @@
+#include<stdio.h>
+#include<windows.h>
+#include "detours.h"
+
+// If compiling as 64-bit
+#ifdef _M_X64
+#pragma comment (lib, "detours.lib")
+#endif 
+
+typedef INT (WINAPI *fnMessageBox)(HWND hWnd, LPCSTR lpText, LPCSTR lpCaption, UINT uType);
+
+
+	// Used as a unhooked MessageBoxA in `MyMessageBoxA`
+	// And used by `DetourAttach` & `DetourDetach`
+fnMessageBox g_pMessageBoxA = (fnMessageBox)MessageBoxA;
+
+// The function that will run instead MessageBoxA when hooked
+INT WINAPI MyMessageBoxA(HWND hWnd, LPCSTR lpText, LPCSTR lpCaption, UINT uType) {
+
+	// log Original Parameters
+	printf("[+] Original Parameters : \n");
+	printf("\t - lpText : %s\n", lpText);
+	printf("\t - lpCaption : %s\n", lpCaption);
+
+	// show different text and caption.
+	return g_pMessageBoxA(hWnd, "different lpText", "different lpCaption", uType);
+
+}
+
+BOOL InstallHook() {
+
+	DWORD	dwDetoursErr = NULL;
+
+	// Creating the transaction & updating it
+	if ((dwDetoursErr = DetourTransactionBegin()) != NO_ERROR) {
+		printf("[!] DetourTransactionBegin Failed With Error : %d \n", dwDetoursErr);
+		return FALSE;
+	}
+
+	if ((dwDetoursErr = DetourUpdateThread(GetCurrentThread())) != NO_ERROR) {
+		printf("[!] DetourUpdateThread Failed With Error : %d \n", dwDetoursErr);
+		return FALSE;
+	}
+
+	// Running MyMessageBoxA instead of g_pMessageBoxA that is MessageBoxA
+	if ((dwDetoursErr = DetourAttach(&(PVOID&)g_pMessageBoxA, MyMessageBoxA)) != NO_ERROR) {
+		printf("[!] DetourAttach Failed With Error : %d \n", dwDetoursErr);
+		return FALSE;
+	}
+
+	// Actual hook installing happen after `DetourTransactionCommit` - commiting the transaction
+	if ((dwDetoursErr = DetourTransactionCommit()) != NO_ERROR) {
+		printf("[!] DetourTransactionCommit Failed With Error : %d \n", dwDetoursErr);
+		return FALSE;
+	}
+
+	return TRUE;
+}
+
+BOOL Unhook() {
+
+	DWORD	dwDetoursErr = NULL;
+
+	// Creating the transaction & updating it
+	if ((dwDetoursErr = DetourTransactionBegin()) != NO_ERROR) {
+		printf("[!] DetourTransactionBegin Failed With Error : %d \n", dwDetoursErr);
+		return FALSE;
+	}
+
+	if ((dwDetoursErr = DetourUpdateThread(GetCurrentThread())) != NO_ERROR) {
+		printf("[!] DetourUpdateThread Failed With Error : %d \n", dwDetoursErr);
+		return FALSE;
+	}
+
+	// Removing the hook from MessageBoxA
+	if ((dwDetoursErr = DetourDetach(&(PVOID&)g_pMessageBoxA, MyMessageBoxA)) != NO_ERROR) {
+		printf("[!] DetourDetach Failed With Error : %d \n", dwDetoursErr);
+		return FALSE;
+	}
+
+	// Actual hook removal happen after `DetourTransactionCommit` - commiting the transaction
+	if ((dwDetoursErr = DetourTransactionCommit()) != NO_ERROR) {
+		printf("[!] DetourTransactionCommit Failed With Error : %d \n", dwDetoursErr);
+		return FALSE;
+	}
+
+	return TRUE;
+}
+
+
+
+int main() {
+
+
+	// Will run - not hooked
+	MessageBoxA(NULL, "What Do You Think About Malware Development ?", "Original MsgBox", MB_OK | MB_ICONQUESTION);
+
+
+	//------------------------------------------------------------------
+		//  Hooking
+	if (!InstallHook()) {
+		return -1;
+	}
+		
+
+	//------------------------------------------------------------------
+		// Won't run - will run MyMessageBoxA instead
+	MessageBoxA(NULL, "Malware Development Is Bad", "Original MsgBox", MB_OK | MB_ICONWARNING);
+	MessageBoxA(NULL, "Is Bad", " MsgBox", MB_OK | MB_ICONWARNING);
+
+
+	//------------------------------------------------------------------
+	//  Unhooking
+	if (!Unhook())
+		return -1;
+
+	//------------------------------------------------------------------
+		//  Will run - hook removed
+	MessageBoxA(NULL, "Normal MsgBox Again", "Original MsgBox", MB_OK | MB_ICONINFORMATION);
+
+
+	return 0;
+}
