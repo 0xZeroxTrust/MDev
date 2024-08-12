@@ -18,6 +18,7 @@ int (WINAPI MyMessageBoxA)(HWND   hWnd, LPCSTR lpText, LPCSTR lpCaption, UINT   
 	printf("\t - lpText : %s\n", lpText);
 	printf("\t - lpCaption : %s \n", lpCaption);
 
+	// Due to the trampoline-based hook, it is impossible to have a global original function pointer be called to resume execution. Therefore, the MessageBoxW WinAPI will be called.
 	return MessageBoxW(hWnd, L"Different lpText", L"Different lpCaption", uType);
 }
 
