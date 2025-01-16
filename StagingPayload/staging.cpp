@@ -13,7 +13,8 @@ BOOL GetPayloadFromUrl(IN LPCWSTR szUrl,OUT PBYTE* pPayloadBytes, OUT SIZE_T* sP
 	DWORD		dwBytesRead = NULL;
 
 	SIZE_T		sSize = NULL;
-	PBYTE		pBytes = NULL, pTmpBytes = NULL;
+	PBYTE		pBytes = NULL; // buffer for actual paylaod  
+	PBYTE           pTmpBytes = NULL; // temp buffer
 
 
 
